@@ -1,0 +1,9 @@
+[package]
+name = "tis-cli"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+enum-iterator = "1.4.1"
+logos = "0.13.0"
+num-traits = "0.2.15"
