@@ -1,13 +1,12 @@
 [package]
 name = "tis-cli"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/BlockOG/tis-cli"
 readme = "README.md"
 description = "TIS-100 emulator"
 keywords = ["tis", "tis-100", "emulator", "cli"]
-categories = ["emulator"]
 authors = ["BlockOG"]
 
 [dependencies]
