@@ -1,4 +1,10 @@
-use std::collections::HashMap;
+use std::{
+    collections::{
+        hash_map::Entry::{Occupied, Vacant},
+        HashMap,
+    },
+    iter::Peekable,
+};
 
 use logos::{Lexer, Logos};
 
@@ -97,269 +103,109 @@ enum CodeToken {
     Nil,
 }
 
+fn get_register(code: &mut Peekable<Lexer<CodeToken>>) -> Register {
+    match code.next() {
+        Some(Ok(CodeToken::Up)) => Register::Direction(Direction::Up),
+        Some(Ok(CodeToken::Down)) => Register::Direction(Direction::Down),
+        Some(Ok(CodeToken::Left)) => Register::Direction(Direction::Left),
+        Some(Ok(CodeToken::Right)) => Register::Direction(Direction::Right),
+        Some(Ok(CodeToken::Any)) => Register::Any,
+        Some(Ok(CodeToken::Last)) => Register::Last,
+        Some(Ok(CodeToken::Accumulator)) => Register::Accumulator,
+        Some(Ok(CodeToken::Nil)) => Register::Nil,
+        _ => panic!("Expected direction or register"),
+    }
+}
+
+fn get_register_or_number(code: &mut Peekable<Lexer<CodeToken>>) -> RegisterOrNumber {
+    match code.next() {
+        Some(Ok(CodeToken::Number(x))) => RegisterOrNumber::Number(x),
+        Some(Ok(CodeToken::Up)) => RegisterOrNumber::Register(Register::Direction(Direction::Up)),
+        Some(Ok(CodeToken::Down)) => {
+            RegisterOrNumber::Register(Register::Direction(Direction::Down))
+        }
+        Some(Ok(CodeToken::Left)) => {
+            RegisterOrNumber::Register(Register::Direction(Direction::Left))
+        }
+        Some(Ok(CodeToken::Right)) => {
+            RegisterOrNumber::Register(Register::Direction(Direction::Right))
+        }
+        Some(Ok(CodeToken::Any)) => RegisterOrNumber::Register(Register::Any),
+        Some(Ok(CodeToken::Last)) => RegisterOrNumber::Register(Register::Last),
+        Some(Ok(CodeToken::Accumulator)) => RegisterOrNumber::Register(Register::Accumulator),
+        Some(Ok(CodeToken::Nil)) => RegisterOrNumber::Register(Register::Nil),
+        _ => panic!("Expected number, direction or register"),
+    }
+}
+
 pub(super) fn parse_code(code: &str) -> (HashMap<String, usize>, Vec<Instruction>) {
-    let mut code = CodeToken::lexer(code);
+    let mut code = CodeToken::lexer(code).peekable();
 
     let mut labels = HashMap::new();
     let mut instructions = Vec::new();
 
     while let Some(token) = code.next() {
         match token.expect("Failed to parse code") {
-            CodeToken::Newline => {}
+            CodeToken::Newline => continue,
             CodeToken::Label(name) => {
-                if labels.contains_key(&name) {
-                    panic!("Label already defined: {}", name);
+                match labels.entry(name) {
+                    Occupied(entry) => panic!("Label already defined: {}", entry.key()),
+                    Vacant(entry) => entry.insert(instructions.len()),
+                };
+                if code.peek().is_some() {
+                    panic!("Label must be followed by code or a newline");
                 }
-
-                labels.insert(name, instructions.len());
+                continue; // A label doesn't require a newline after it
             }
 
             CodeToken::Noop => {
                 instructions.push(Instruction::Noop);
-                match code.next() {
-                    Some(Ok(CodeToken::Newline)) => {}
-                    _ => panic!("Expected newline"),
-                }
             }
 
             CodeToken::Move => {
-                let source;
-                match code.next() {
-                    Some(Ok(CodeToken::Number(x))) => source = RegisterOrNumber::Number(x),
-                    Some(Ok(CodeToken::Up)) => {
-                        source = RegisterOrNumber::Register(Register::Direction(Direction::Up))
-                    }
-                    Some(Ok(CodeToken::Down)) => {
-                        source = RegisterOrNumber::Register(Register::Direction(Direction::Down))
-                    }
-                    Some(Ok(CodeToken::Left)) => {
-                        source = RegisterOrNumber::Register(Register::Direction(Direction::Left))
-                    }
-                    Some(Ok(CodeToken::Right)) => {
-                        source = RegisterOrNumber::Register(Register::Direction(Direction::Right))
-                    }
-                    Some(Ok(CodeToken::Any)) => source = RegisterOrNumber::Register(Register::Any),
-                    Some(Ok(CodeToken::Last)) => {
-                        source = RegisterOrNumber::Register(Register::Last)
-                    }
-                    Some(Ok(CodeToken::Accumulator)) => {
-                        source = RegisterOrNumber::Register(Register::Accumulator)
-                    }
-                    Some(Ok(CodeToken::Nil)) => source = RegisterOrNumber::Register(Register::Nil),
-                    _ => panic!("Expected number, direction or register"),
-                }
-
-                match code.next() {
-                    Some(Ok(CodeToken::Up)) => instructions.push(Instruction::Move(
-                        source,
-                        Register::Direction(Direction::Up),
-                    )),
-                    Some(Ok(CodeToken::Down)) => instructions.push(Instruction::Move(
-                        source,
-                        Register::Direction(Direction::Down),
-                    )),
-                    Some(Ok(CodeToken::Left)) => instructions.push(Instruction::Move(
-                        source,
-                        Register::Direction(Direction::Left),
-                    )),
-                    Some(Ok(CodeToken::Right)) => instructions.push(Instruction::Move(
-                        source,
-                        Register::Direction(Direction::Right),
-                    )),
-                    Some(Ok(CodeToken::Any)) => {
-                        instructions.push(Instruction::Move(source, Register::Any))
-                    }
-                    Some(Ok(CodeToken::Last)) => {
-                        instructions.push(Instruction::Move(source, Register::Last))
-                    }
-                    Some(Ok(CodeToken::Accumulator)) => {
-                        instructions.push(Instruction::Move(source, Register::Accumulator))
-                    }
-                    Some(Ok(CodeToken::Nil)) => {
-                        instructions.push(Instruction::Move(source, Register::Nil))
-                    }
-                    _ => panic!("Expected direction or register"),
-                }
-
-                match code.next() {
-                    Some(Ok(CodeToken::Newline)) => {}
-                    _ => panic!("Expected newline"),
-                }
+                instructions.push(Instruction::Move(
+                    get_register_or_number(&mut code),
+                    get_register(&mut code),
+                ));
             }
 
             CodeToken::Swap => {
                 instructions.push(Instruction::Swap);
-                match code.next() {
-                    Some(Ok(CodeToken::Newline)) => {}
-                    _ => panic!("Expected newline"),
-                }
             }
             CodeToken::Save => {
                 instructions.push(Instruction::Save);
-                match code.next() {
-                    Some(Ok(CodeToken::Newline)) => {}
-                    _ => panic!("Expected newline"),
-                }
             }
 
             CodeToken::Add => {
-                match code.next() {
-                    Some(Ok(CodeToken::Number(x))) => {
-                        instructions.push(Instruction::Add(RegisterOrNumber::Number(x)))
-                    }
-                    Some(Ok(CodeToken::Up)) => instructions.push(Instruction::Add(
-                        RegisterOrNumber::Register(Register::Direction(Direction::Up)),
-                    )),
-                    Some(Ok(CodeToken::Down)) => instructions.push(Instruction::Add(
-                        RegisterOrNumber::Register(Register::Direction(Direction::Down)),
-                    )),
-                    Some(Ok(CodeToken::Left)) => instructions.push(Instruction::Add(
-                        RegisterOrNumber::Register(Register::Direction(Direction::Left)),
-                    )),
-                    Some(Ok(CodeToken::Right)) => instructions.push(Instruction::Add(
-                        RegisterOrNumber::Register(Register::Direction(Direction::Right)),
-                    )),
-                    Some(Ok(CodeToken::Any)) => instructions
-                        .push(Instruction::Add(RegisterOrNumber::Register(Register::Any))),
-                    Some(Ok(CodeToken::Last)) => instructions
-                        .push(Instruction::Add(RegisterOrNumber::Register(Register::Last))),
-                    Some(Ok(CodeToken::Accumulator)) => instructions.push(Instruction::Add(
-                        RegisterOrNumber::Register(Register::Accumulator),
-                    )),
-                    Some(Ok(CodeToken::Nil)) => instructions
-                        .push(Instruction::Add(RegisterOrNumber::Register(Register::Nil))),
-                    _ => panic!("Expected number, direction or register"),
-                }
-                match code.next() {
-                    Some(Ok(CodeToken::Newline)) => {}
-                    _ => panic!("Expected newline"),
-                }
+                instructions.push(Instruction::Add(get_register_or_number(&mut code)));
             }
             CodeToken::Subtract => {
-                match code.next() {
-                    Some(Ok(CodeToken::Number(x))) => {
-                        instructions.push(Instruction::Subtract(RegisterOrNumber::Number(x)))
-                    }
-                    Some(Ok(CodeToken::Up)) => instructions.push(Instruction::Subtract(
-                        RegisterOrNumber::Register(Register::Direction(Direction::Up)),
-                    )),
-                    Some(Ok(CodeToken::Down)) => instructions.push(Instruction::Subtract(
-                        RegisterOrNumber::Register(Register::Direction(Direction::Down)),
-                    )),
-                    Some(Ok(CodeToken::Left)) => instructions.push(Instruction::Subtract(
-                        RegisterOrNumber::Register(Register::Direction(Direction::Left)),
-                    )),
-                    Some(Ok(CodeToken::Right)) => instructions.push(Instruction::Subtract(
-                        RegisterOrNumber::Register(Register::Direction(Direction::Right)),
-                    )),
-                    Some(Ok(CodeToken::Any)) => instructions.push(Instruction::Subtract(
-                        RegisterOrNumber::Register(Register::Any),
-                    )),
-                    Some(Ok(CodeToken::Last)) => instructions.push(Instruction::Subtract(
-                        RegisterOrNumber::Register(Register::Last),
-                    )),
-                    Some(Ok(CodeToken::Accumulator)) => instructions.push(Instruction::Subtract(
-                        RegisterOrNumber::Register(Register::Accumulator),
-                    )),
-                    Some(Ok(CodeToken::Nil)) => instructions.push(Instruction::Subtract(
-                        RegisterOrNumber::Register(Register::Nil),
-                    )),
-                    _ => panic!("Expected number, direction or register"),
-                }
-                match code.next() {
-                    Some(Ok(CodeToken::Newline)) => {}
-                    _ => panic!("Expected newline"),
-                }
+                instructions.push(Instruction::Subtract(get_register_or_number(&mut code)));
             }
             CodeToken::Negate => {
                 instructions.push(Instruction::Negate);
-                match code.next() {
-                    Some(Ok(CodeToken::Newline)) => {}
-                    _ => panic!("Expected newline"),
-                }
             }
 
             CodeToken::Jump(label) => {
                 instructions.push(Instruction::Jump(label));
-
-                match code.next() {
-                    Some(Ok(CodeToken::Newline)) => {}
-                    _ => panic!("Expected newline"),
-                }
             }
 
             CodeToken::JumpEqualZero(label) => {
                 instructions.push(Instruction::JumpEqualZero(label));
-
-                match code.next() {
-                    Some(Ok(CodeToken::Newline)) => {}
-                    _ => panic!("Expected newline"),
-                }
             }
             CodeToken::JumpNotZero(label) => {
                 instructions.push(Instruction::JumpNotZero(label));
-
-                match code.next() {
-                    Some(Ok(CodeToken::Newline)) => {}
-                    _ => panic!("Expected newline"),
-                }
             }
 
             CodeToken::JumpGreaterThanZero(label) => {
                 instructions.push(Instruction::JumpGreaterThanZero(label));
-
-                match code.next() {
-                    Some(Ok(CodeToken::Newline)) => {}
-                    _ => panic!("Expected newline"),
-                }
             }
             CodeToken::JumpLessThanZero(label) => {
                 instructions.push(Instruction::JumpLessThanZero(label));
-
-                match code.next() {
-                    Some(Ok(CodeToken::Newline)) => {}
-                    _ => panic!("Expected newline"),
-                }
             }
 
             CodeToken::JumpRelative => {
-                match code.next() {
-                    Some(Ok(CodeToken::Number(x))) => {
-                        instructions.push(Instruction::JumpRelative(RegisterOrNumber::Number(x)))
-                    }
-                    Some(Ok(CodeToken::Up)) => instructions.push(Instruction::JumpRelative(
-                        RegisterOrNumber::Register(Register::Direction(Direction::Up)),
-                    )),
-                    Some(Ok(CodeToken::Down)) => instructions.push(Instruction::JumpRelative(
-                        RegisterOrNumber::Register(Register::Direction(Direction::Down)),
-                    )),
-                    Some(Ok(CodeToken::Left)) => instructions.push(Instruction::JumpRelative(
-                        RegisterOrNumber::Register(Register::Direction(Direction::Left)),
-                    )),
-                    Some(Ok(CodeToken::Right)) => instructions.push(Instruction::JumpRelative(
-                        RegisterOrNumber::Register(Register::Direction(Direction::Right)),
-                    )),
-                    Some(Ok(CodeToken::Any)) => instructions.push(Instruction::JumpRelative(
-                        RegisterOrNumber::Register(Register::Any),
-                    )),
-                    Some(Ok(CodeToken::Last)) => instructions.push(Instruction::JumpRelative(
-                        RegisterOrNumber::Register(Register::Last),
-                    )),
-                    Some(Ok(CodeToken::Accumulator)) => {
-                        instructions.push(Instruction::JumpRelative(RegisterOrNumber::Register(
-                            Register::Accumulator,
-                        )))
-                    }
-                    Some(Ok(CodeToken::Nil)) => instructions.push(Instruction::JumpRelative(
-                        RegisterOrNumber::Register(Register::Nil),
-                    )),
-                    _ => panic!("Expected number, direction or register"),
-                }
-
-                match code.next() {
-                    Some(Ok(CodeToken::Newline)) => {}
-                    _ => panic!("Expected newline"),
-                }
+                instructions.push(Instruction::JumpRelative(get_register_or_number(&mut code)));
             }
 
             CodeToken::Accumulator => panic!("Accumulator can only be used in expressions"),
@@ -371,6 +217,11 @@ pub(super) fn parse_code(code: &str) -> (HashMap<String, usize>, Vec<Instruction
             CodeToken::Left => panic!("Left can only be used in expressions"),
             CodeToken::Right => panic!("Right can only be used in expressions"),
             CodeToken::Number(_) => panic!("Number can only be used in expressions"),
+        }
+
+        match code.next() {
+            Some(Ok(CodeToken::Newline)) => {}
+            _ => panic!("Expected newline"),
         }
     }
 

@@ -19,7 +19,7 @@ pub(crate) fn parse(tis: &mut TIS, code: String) {
         let node_code = node_code.replace("\r\n", "\n");
         let (settings, code) = node_code
             .split_once("\n")
-            .unwrap_or((node_code.as_str(), ""));
+            .expect("There has to be a newline separator between nodes");
 
         let (pos, accumulator, backup, special_node) = parse_settings(settings);
 
