@@ -15,7 +15,7 @@ use crate::{
 };
 
 pub(crate) fn parse(tis: &mut TIS, code: String) {
-    for node_code in code.to_lowercase().split("@").skip(1) {
+    for node_code in (code.to_lowercase() + "\n").split("@").skip(1) {
         let node_code = node_code.replace("\r\n", "\n");
         let (settings, code) = node_code
             .split_once("\n")
