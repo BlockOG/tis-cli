@@ -152,7 +152,7 @@ pub(super) fn parse_code(code: &str) -> (HashMap<String, usize>, Vec<Instruction
                     Occupied(entry) => panic!("Label already defined: {}", entry.key()),
                     Vacant(entry) => entry.insert(instructions.len()),
                 };
-                if code.peek().is_some() {
+                if code.peek().is_none() {
                     panic!("Label must be followed by code or a newline");
                 }
                 continue; // A label doesn't require a newline after it
