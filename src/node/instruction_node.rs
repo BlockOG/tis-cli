@@ -154,6 +154,16 @@ impl InstructionNode {
         }
     }
 
+    fn get_from_register_or_number(
+        &mut self,
+        register_or_number: RegisterOrNumber,
+    ) -> Option<Number> {
+        match register_or_number {
+            RegisterOrNumber::Register(register) => self.get_value(register),
+            RegisterOrNumber::Number(number) => Some(number),
+        }
+    }
+
     fn set_value(&mut self, register: Register, value: Number) -> bool {
         match register {
             Register::Accumulator => {
@@ -208,11 +218,7 @@ impl Node for InstructionNode {
     }
 
     fn tick(&mut self) {
-        if self.instructions.is_empty() {
-            return;
-        }
-
-        if self.give != DirectionGiving::None {
+        if self.instructions.is_empty() || self.give != DirectionGiving::None {
             return;
         }
 
@@ -223,15 +229,19 @@ impl Node for InstructionNode {
         let instruction = self.instructions[self.ptr].clone();
 
         let mut skip_ptr_incr = false;
+        let mut jump = |label: String| {
+            if let Some(ptr) = self.labels.get(&label) {
+                skip_ptr_incr = true;
+                self.ptr = *ptr;
+            } else {
+                panic!("Label \"{}\" not found", label);
+            }
+        };
+
         match instruction {
-            Instruction::Noop => {}
             Instruction::Move(source, destination) => {
-                let value = match source {
-                    RegisterOrNumber::Register(register) => match self.get_value(register) {
-                        None => return,
-                        Some(value) => value,
-                    },
-                    RegisterOrNumber::Number(number) => number,
+                let Some(value) = self.get_from_register_or_number(source) else {
+                    return
                 };
                 skip_ptr_incr = self.set_value(destination, value);
             }
@@ -244,22 +254,14 @@ impl Node for InstructionNode {
             }
 
             Instruction::Add(source) => {
-                let value = match source {
-                    RegisterOrNumber::Register(register) => match self.get_value(register) {
-                        None => return,
-                        Some(value) => value,
-                    },
-                    RegisterOrNumber::Number(number) => number,
+                let Some(value) = self.get_from_register_or_number(source) else {
+                    return
                 };
                 self.accumulator += value;
             }
             Instruction::Subtract(source) => {
-                let value = match source {
-                    RegisterOrNumber::Register(register) => match self.get_value(register) {
-                        None => return,
-                        Some(value) => value,
-                    },
-                    RegisterOrNumber::Number(number) => number,
+                let Some(value) = self.get_from_register_or_number(source) else {
+                    return
                 };
                 self.accumulator -= value;
             }
@@ -267,70 +269,26 @@ impl Node for InstructionNode {
                 self.accumulator = -self.accumulator;
             }
 
-            Instruction::Jump(label) => {
-                if let Some(ptr) = self.labels.get(&label) {
-                    skip_ptr_incr = true;
-                    self.ptr = *ptr;
-                } else {
-                    panic!("Label \"{}\" not found", label);
-                }
-            }
+            Instruction::Jump(label) => jump(label),
 
-            Instruction::JumpEqualZero(label) => {
-                if self.accumulator.is_zero() {
-                    if let Some(ptr) = self.labels.get(&label) {
-                        skip_ptr_incr = true;
-                        self.ptr = *ptr;
-                    } else {
-                        panic!("Label \"{}\" not found", label);
-                    }
-                }
-            }
-            Instruction::JumpNotZero(label) => {
-                if !self.accumulator.is_zero() {
-                    if let Some(ptr) = self.labels.get(&label) {
-                        skip_ptr_incr = true;
-                        self.ptr = *ptr;
-                    } else {
-                        panic!("Label \"{}\" not found", label);
-                    }
-                }
-            }
+            Instruction::JumpEqualZero(label) if self.accumulator.is_zero() => jump(label),
+            Instruction::JumpNotZero(label) if !self.accumulator.is_zero() => jump(label),
 
-            Instruction::JumpGreaterThanZero(label) => {
-                if self.accumulator > zero() {
-                    if let Some(ptr) = self.labels.get(&label) {
-                        skip_ptr_incr = true;
-                        self.ptr = *ptr;
-                    } else {
-                        panic!("Label \"{}\" not found", label);
-                    }
-                }
-            }
-            Instruction::JumpLessThanZero(label) => {
-                if self.accumulator < zero() {
-                    if let Some(ptr) = self.labels.get(&label) {
-                        skip_ptr_incr = true;
-                        self.ptr = *ptr;
-                    } else {
-                        panic!("Label \"{}\" not found", label);
-                    }
-                }
-            }
+            Instruction::JumpGreaterThanZero(label) if self.accumulator > zero() => jump(label),
+            Instruction::JumpLessThanZero(label) if self.accumulator < zero() => jump(label),
 
             Instruction::JumpRelative(source) => {
                 skip_ptr_incr = true;
                 self.ptr = (self.ptr as i32
-                    + match source {
-                        RegisterOrNumber::Register(register) => match self.get_value(register) {
-                            None => return,
-                            Some(value) => value,
-                        },
-                        RegisterOrNumber::Number(number) => number,
+                    + match self.get_from_register_or_number(source) {
+                        Some(number) => number,
+                        None => return,
                     }
                     .value() as i32)
                     .max(0) as usize;
             }
+
+            _ => {}
         }
 
         if !skip_ptr_incr {
@@ -340,54 +298,35 @@ impl Node for InstructionNode {
 
     fn handle_give(&mut self) {
         if self.give == DirectionGiving::None && self.give_value.is_some() {
-            let register = if let Instruction::Move(_, register) = self.instructions[self.ptr] {
-                register
-            } else {
-                unreachable!()
+            let Instruction::Move(_, register) = self.instructions[self.ptr] else {
+                unreachable!("What on earth did you do? Report this to https://github.com/BlockOG/tis-cli/issues")
             };
             match register {
                 Register::Direction(_) | Register::Any => self.ptr += 1,
-                Register::Last => {
-                    if self.last.is_some() {
-                        self.ptr += 1;
-                    } else {
-                        return;
-                    }
-                }
+                Register::Last if self.last.is_some() => self.ptr += 1,
                 _ => return,
             }
-            match register {
-                Register::Direction(direction) => {
-                    self.give = DirectionGiving::Direction(direction.clone());
-                }
-                Register::Any => {
-                    self.give = DirectionGiving::Any;
-                }
-                Register::Last => {
-                    self.give = DirectionGiving::Direction(self.last.unwrap());
-                }
-                _ => {}
-            }
+            self.give = match register {
+                Register::Direction(direction) => DirectionGiving::Direction(direction.clone()),
+                Register::Any => DirectionGiving::Any,
+                Register::Last => DirectionGiving::Direction(self.last.unwrap()),
+                _ => unreachable!(),
+            };
         }
     }
 
     fn post_handle_give(&mut self) -> Option<Position> {
-        if let Some(giving_to) = self.giving_to {
-            if self.give == DirectionGiving::Any {
-                self.last = Some(giving_to);
-            }
-            self.give = DirectionGiving::Given;
-
-            Some(self.position.in_direction(giving_to))
-        } else {
-            None
+        let giving_to = self.giving_to?;
+        if self.give == DirectionGiving::Any {
+            self.last = Some(giving_to);
         }
+        self.give = DirectionGiving::Given;
+
+        Some(self.position.in_direction(giving_to))
     }
 
     fn post_post_handle_give(&mut self) {
-        if self.giving_to.is_some() {
-            self.give = DirectionGiving::None;
-            self.giving_to = None;
-        }
+        self.give = DirectionGiving::None;
+        self.giving_to = None;
     }
 }

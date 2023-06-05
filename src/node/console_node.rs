@@ -188,12 +188,9 @@ impl Node for ConsoleInNode {
     fn handle_give(&mut self) {}
 
     fn post_handle_give(&mut self) -> Option<Position> {
-        if let Some(giving_to) = self.giving_to {
-            self.give = DirectionGiving::Given;
-            Some(self.position.in_direction(giving_to))
-        } else {
-            None
-        }
+        let giving_to = self.giving_to?;
+        self.give = DirectionGiving::Given;
+        Some(self.position.in_direction(giving_to))
     }
 
     fn post_post_handle_give(&mut self) {

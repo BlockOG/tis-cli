@@ -22,27 +22,54 @@ impl Number {
     }
 }
 
-impl From<i16> for Number {
-    fn from(number: i16) -> Self {
-        Self(number.clamp(-999, 999))
+impl From<i8> for Number {
+    fn from(number: i8) -> Self {
+        Self(number as i16)
     }
 }
 
-impl From<i32> for Number {
-    fn from(number: i32) -> Self {
-        Self(number.clamp(-999, 999) as i16)
+impl From<u8> for Number {
+    fn from(number: u8) -> Self {
+        Self(number as i16)
     }
 }
+
+macro_rules! impl_from_signed {
+    ($($type:ty),*) => {
+        $(
+            impl From<$type> for Number {
+                fn from(number: $type) -> Self {
+                    Self(number.clamp(-999, 999) as i16)
+                }
+            }
+        )*
+    };
+}
+
+macro_rules! impl_from_unsigned {
+    ($($type:ty),*) => {
+        $(
+            impl From<$type> for Number {
+                fn from(number: $type) -> Self {
+                    Self(number.min(999) as i16)
+                }
+            }
+        )*
+    };
+}
+
+impl_from_signed!(i16, i32, i64, i128, isize);
+impl_from_unsigned!(u16, u32, u64, u128, usize);
 
 impl AddAssign for Number {
     fn add_assign(&mut self, rhs: Self) {
-        self.set_value(self.0 + rhs.value());
+        self.set_value(self.value() + rhs.value());
     }
 }
 
 impl SubAssign for Number {
     fn sub_assign(&mut self, rhs: Self) {
-        self.set_value(self.0 - rhs.value());
+        self.set_value(self.value() - rhs.value());
     }
 }
 
@@ -76,7 +103,7 @@ impl Zero for Number {
     }
 
     fn is_zero(&self) -> bool {
-        self.0 == 0
+        self.value() == 0
     }
 }
 
@@ -84,34 +111,31 @@ impl FromStr for Number {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        let mut s = s.chars();
+        let mut s = s.chars().peekable();
         let mut value = 0;
 
-        if let Some(c) = s.next() {
+        let is_negative = s.peek().ok_or("Empty string".to_owned())? == &'-';
+        if is_negative {
+            s.next();
+        }
+
+        while let Some(c) = s.next() {
             match c {
-                '-' => value *= -1,
                 '0'..='9' => {
                     value *= 10;
                     value += c.to_digit(10).unwrap() as i16;
+                    value = value.min(999);
                 }
 
                 _ => return Err(format!("Invalid digit: '{}'", c)),
             }
         }
-        while let Some(c) = s.next() {
-            match c {
-                '0'..='9' if -999 < value && value < 999 => {
-                    value *= 10;
-                    value += c.to_digit(10).unwrap() as i16;
-                    value = value.clamp(-999, 999);
-                }
-                '0'..='9' => {}
 
-                _ => return Err(format!("Invalid digit: '{}'", c)),
-            }
-        }
-
-        Ok(Self::from(value))
+        Ok(if is_negative {
+            Self::from(-value)
+        } else {
+            Self::from(value)
+        })
     }
 }
 
