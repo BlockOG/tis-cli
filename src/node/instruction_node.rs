@@ -1,4 +1,4 @@
-use std::{cell::RefCell, collections::HashMap, rc::Rc};
+use std::{cell::RefCell, rc::Rc};
 
 use enum_iterator::all;
 use num_traits::{zero, Zero};
@@ -23,7 +23,6 @@ pub(crate) struct InstructionNode {
     right: Option<Rc<RefCell<dyn Node>>>,
 
     // Instructions
-    labels: HashMap<String, usize>,
     instructions: Vec<Instruction>,
     ptr: usize,
 
@@ -39,11 +38,7 @@ pub(crate) struct InstructionNode {
 }
 
 impl InstructionNode {
-    pub(crate) fn new(
-        position: Position,
-        labels: HashMap<String, usize>,
-        instructions: Vec<Instruction>,
-    ) -> Self {
+    pub(crate) fn new(position: Position, instructions: Vec<Instruction>) -> Self {
         Self {
             position,
 
@@ -52,7 +47,6 @@ impl InstructionNode {
             left: None,
             right: None,
 
-            labels,
             instructions,
             ptr: 0,
 
@@ -229,13 +223,9 @@ impl Node for InstructionNode {
         let instruction = self.instructions[self.ptr].clone();
 
         let mut skip_ptr_incr = false;
-        let mut jump = |label: String| {
-            if let Some(ptr) = self.labels.get(&label) {
-                skip_ptr_incr = true;
-                self.ptr = *ptr;
-            } else {
-                panic!("Label \"{}\" not found", label);
-            }
+        let mut jump = |ptr: usize| {
+            skip_ptr_incr = true;
+            self.ptr = ptr;
         };
 
         match instruction {
@@ -269,13 +259,13 @@ impl Node for InstructionNode {
                 self.accumulator = -self.accumulator;
             }
 
-            Instruction::Jump(label) => jump(label),
+            Instruction::Jump(ptr) => jump(ptr),
 
-            Instruction::JumpEqualZero(label) if self.accumulator.is_zero() => jump(label),
-            Instruction::JumpNotZero(label) if !self.accumulator.is_zero() => jump(label),
+            Instruction::JumpEqualZero(ptr) if self.accumulator.is_zero() => jump(ptr),
+            Instruction::JumpNotZero(ptr) if !self.accumulator.is_zero() => jump(ptr),
 
-            Instruction::JumpGreaterThanZero(label) if self.accumulator > zero() => jump(label),
-            Instruction::JumpLessThanZero(label) if self.accumulator < zero() => jump(label),
+            Instruction::JumpGreaterThanZero(ptr) if self.accumulator > zero() => jump(ptr),
+            Instruction::JumpLessThanZero(ptr) if self.accumulator < zero() => jump(ptr),
 
             Instruction::JumpRelative(source) => {
                 skip_ptr_incr = true;

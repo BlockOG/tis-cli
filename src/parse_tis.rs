@@ -41,8 +41,8 @@ pub(crate) fn parse(tis: &mut TIS, code: String) {
             continue;
         }
 
-        let (labels, instructions) = parse_code(code);
-        let mut node = InstructionNode::new(pos, labels, instructions);
+        let instructions = parse_code(code);
+        let mut node = InstructionNode::new(pos, instructions);
         if let Some(accumulator) = accumulator {
             node = node.with_accumulator(accumulator.into());
         }

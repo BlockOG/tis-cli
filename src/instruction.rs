@@ -15,13 +15,13 @@ pub(crate) enum Instruction {
     Negate,
 
     // Jump instructions
-    Jump(String),
+    Jump(usize),
 
-    JumpEqualZero(String),
-    JumpNotZero(String),
+    JumpEqualZero(usize),
+    JumpNotZero(usize),
 
-    JumpGreaterThanZero(String),
-    JumpLessThanZero(String),
+    JumpGreaterThanZero(usize),
+    JumpLessThanZero(usize),
 
     JumpRelative(RegisterOrNumber),
 }

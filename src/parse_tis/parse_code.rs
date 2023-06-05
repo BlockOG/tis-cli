@@ -138,11 +138,30 @@ fn get_register_or_number(code: &mut Peekable<Lexer<CodeToken>>) -> RegisterOrNu
     }
 }
 
-pub(super) fn parse_code(code: &str) -> (HashMap<String, usize>, Vec<Instruction>) {
+pub(super) fn parse_code(code: &str) -> Vec<Instruction> {
     let mut code = CodeToken::lexer(code).peekable();
 
     let mut labels = HashMap::new();
-    let mut instructions = Vec::new();
+    let mut post_processing_instructions = Vec::new();
+
+    enum PostProcessing {
+        Instruction(Instruction),
+
+        // To be replaced with an instruction
+        Jump(String),
+
+        JumpEqualZero(String),
+        JumpNotZero(String),
+
+        JumpGreaterThanZero(String),
+        JumpLessThanZero(String),
+    }
+
+    impl From<Instruction> for PostProcessing {
+        fn from(instruction: Instruction) -> Self {
+            PostProcessing::Instruction(instruction)
+        }
+    }
 
     while let Some(token) = code.next() {
         match token.expect("Failed to parse code") {
@@ -150,7 +169,7 @@ pub(super) fn parse_code(code: &str) -> (HashMap<String, usize>, Vec<Instruction
             CodeToken::Label(name) => {
                 match labels.entry(name) {
                     Occupied(entry) => panic!("Label already defined: {}", entry.key()),
-                    Vacant(entry) => entry.insert(instructions.len()),
+                    Vacant(entry) => entry.insert(post_processing_instructions.len()),
                 };
                 if code.peek().is_none() {
                     panic!("Label must be followed by code or a newline");
@@ -159,53 +178,56 @@ pub(super) fn parse_code(code: &str) -> (HashMap<String, usize>, Vec<Instruction
             }
 
             CodeToken::Noop => {
-                instructions.push(Instruction::Noop);
+                post_processing_instructions.push(Instruction::Noop.into());
             }
 
             CodeToken::Move => {
-                instructions.push(Instruction::Move(
-                    get_register_or_number(&mut code),
-                    get_register(&mut code),
-                ));
+                post_processing_instructions.push(
+                    Instruction::Move(get_register_or_number(&mut code), get_register(&mut code))
+                        .into(),
+                );
             }
 
             CodeToken::Swap => {
-                instructions.push(Instruction::Swap);
+                post_processing_instructions.push(Instruction::Swap.into());
             }
             CodeToken::Save => {
-                instructions.push(Instruction::Save);
+                post_processing_instructions.push(Instruction::Save.into());
             }
 
             CodeToken::Add => {
-                instructions.push(Instruction::Add(get_register_or_number(&mut code)));
+                post_processing_instructions
+                    .push(Instruction::Add(get_register_or_number(&mut code)).into());
             }
             CodeToken::Subtract => {
-                instructions.push(Instruction::Subtract(get_register_or_number(&mut code)));
+                post_processing_instructions
+                    .push(Instruction::Subtract(get_register_or_number(&mut code)).into());
             }
             CodeToken::Negate => {
-                instructions.push(Instruction::Negate);
+                post_processing_instructions.push(Instruction::Negate.into());
             }
 
             CodeToken::Jump(label) => {
-                instructions.push(Instruction::Jump(label));
+                post_processing_instructions.push(PostProcessing::Jump(label));
             }
 
             CodeToken::JumpEqualZero(label) => {
-                instructions.push(Instruction::JumpEqualZero(label));
+                post_processing_instructions.push(PostProcessing::JumpEqualZero(label));
             }
             CodeToken::JumpNotZero(label) => {
-                instructions.push(Instruction::JumpNotZero(label));
+                post_processing_instructions.push(PostProcessing::JumpNotZero(label));
             }
 
             CodeToken::JumpGreaterThanZero(label) => {
-                instructions.push(Instruction::JumpGreaterThanZero(label));
+                post_processing_instructions.push(PostProcessing::JumpGreaterThanZero(label));
             }
             CodeToken::JumpLessThanZero(label) => {
-                instructions.push(Instruction::JumpLessThanZero(label));
+                post_processing_instructions.push(PostProcessing::JumpLessThanZero(label));
             }
 
             CodeToken::JumpRelative => {
-                instructions.push(Instruction::JumpRelative(get_register_or_number(&mut code)));
+                post_processing_instructions
+                    .push(Instruction::JumpRelative(get_register_or_number(&mut code)).into());
             }
 
             CodeToken::Accumulator => panic!("Accumulator can only be used in expressions"),
@@ -225,5 +247,28 @@ pub(super) fn parse_code(code: &str) -> (HashMap<String, usize>, Vec<Instruction
         }
     }
 
-    (labels, instructions)
+    let eval_label = |label: String| {
+        *labels
+            .get(&label)
+            .expect(format!("Label \"{}\" not found", label).as_str())
+    };
+
+    post_processing_instructions
+        .into_iter()
+        .map(|instruction| match instruction {
+            PostProcessing::Instruction(instruction) => instruction,
+
+            PostProcessing::Jump(label) => Instruction::Jump(eval_label(label)),
+
+            PostProcessing::JumpEqualZero(label) => Instruction::JumpEqualZero(eval_label(label)),
+            PostProcessing::JumpNotZero(label) => Instruction::JumpNotZero(eval_label(label)),
+
+            PostProcessing::JumpGreaterThanZero(label) => {
+                Instruction::JumpGreaterThanZero(eval_label(label))
+            }
+            PostProcessing::JumpLessThanZero(label) => {
+                Instruction::JumpLessThanZero(eval_label(label))
+            }
+        })
+        .collect()
 }
