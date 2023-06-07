@@ -10,6 +10,7 @@ keywords = ["tis", "tis-100", "emulator", "cli"]
 authors = ["BlockOG"]
 
 [dependencies]
+ariadne = "0.3.0"
 enum-iterator = "1.4.1"
 logos = "0.13.0"
 num-traits = "0.2.15"
